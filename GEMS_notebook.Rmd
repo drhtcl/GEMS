@@ -1,0 +1,460 @@
+---
+title: '(IN PROGRESS!!)25 anos de Chumbo em alimentos:'
+author: "Fabiano Silva (drhtcl@gmail.com)"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+subtitle: Estudo da distribuição mundial da contaminação de alimentos por Chumbo usando
+  a base de dados GEMSFOODS(OMS) no período de 1995-2020
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse=TRUE)
+```
+
+
+# 1. Introdução
+
+O Chumbo(Pb) é o segundo metal mais tóxico depois do arsênio (As), compreende 0,002% da crosta terrestre.
+
+O chumbo, como outros metais pesados, não se biodegrada nem desaparece do meio ambiente com o tempo. Embora os níveis de chumbo no suprimento de alimentos tenham diminuído drasticamente entre as décadas de 1970 e 1990, baixos níveis de chumbo continuam a ser detectados em alguns alimentos devido à presença contínua no meio ambiente. O chumbo do solo pode  ser absorvido por plantas cultivadas para obtenção de frutas ou vegetais ou plantas usadas como ingredientes em alimentos ou ração animal.
+
+O chumbo é venenoso para o ser humano e pode afetar pessoas de qualquer idade ou estado de saúde. O chumbo é especialmente prejudicial para as populações vulneráveis, incluindo bebês, crianças pequenas, mulheres grávidas e seus fetos e outras pessoas com condições crônicas de saúde. Altos níveis de exposição ao chumbo podem prejudicar seriamente a saúde e o desenvolvimento das crianças, especificamente o cérebro e o sistema nervoso. Os efeitos neurológicos de altos níveis de exposição ao chumbo durante a primeira infância incluem dificuldades de aprendizagem, dificuldades de comportamento e QI reduzido. Como o chumbo pode se acumular no corpo, mesmo a exposição crônica de baixo nível pode ser perigosa ao longo do tempo.
+
+Estima-se que a exposição ao chumbo foi responsável, em 2004, por 143 mil mortes
+e 0,6% da carga global de doenças, levando em consideração retardo mental leve e desfechos cardiovasculares
+
+# 1.1 Objetivo
+
+O objetivo deste trabalho é: 
+
+1- investigar o conteúdo de Chumbo nos alimentos utilizando a linguagem R como meio de filtragem, análise e modelagem das distribuições conforme as variedades de alimentos consumidos, países, condições analíticas e datas.
+
+2- Descobrir onde e quais alimentos apresentam maior contaminação e criar possíveis hipóteses de causa.
+
+# 2. Dados iniciais e ingestão da base da dados:
+
+As informações foram retirados da base de dados "GEMSFOODS" da Organização Mundial da Saúde (OMS) presente no endereço: 
+
+https://extranet.who.int/gemsfood/
+
+
+Todos os cálculos e gráficos foram feitos em  **Rstudio versão  1.3.959** e **R base 3.6.3** e utilizando as seguintes bibliotecas:
+
+```{r message=FALSE, warning=FALSE}
+library(readr)
+library(ggplot2)
+library(tidyverse)
+library(knitr)
+library(RColorBrewer)
+library(ggalluvial)
+library(treemapify)
+```
+
+Os códigos empregados para executar esse trabalha serão deixados a mostra. Todo o processamento é baseado em padrões mais modernos em reprodutibilidade [red] em pesquisa onde, dados individuais não são manipulados e todo o processo (do reconhecimento do bancos de dados ao relatório final) é feito de forma automatizada e pode ser auditado pelas linhas de código empregado.
+
+Começamos consolidando a base de dados, os arquivos foram baixados em grupos para facilitar o download:
+
+```{r message=FALSE}
+GEMS2000 <- read.csv("/mnt/DADOS/Data Science/GEMFoods/Gemsfood(1980-2000).csv", dec=",")
+GEMS2010 <- read.csv("/mnt/DADOS/Data Science/GEMFoods/Gemsfood(2000-2010).csv", dec=",")
+GEMS2014 <- read.csv("/mnt/DADOS/Data Science/GEMFoods/Gemsfood(2010-2014).csv", dec=",")
+GEMS2016 <- read.csv("/mnt/DADOS/Data Science/GEMFoods/Gemsfood(2014-2016).csv", dec=",")
+GEMS2018 <- read.csv("/mnt/DADOS/Data Science/GEMFoods/Gemsfood(2016-2018).csv", dec=",")
+GEMS2020 <- read.csv("/mnt/DADOS/Data Science/GEMFoods/Gemsfood(2018-2020).csv", dec=",")
+
+GEMS <- rbind(GEMS2000,GEMS2010,GEMS2014,GEMS2016,GEMS2018,GEMS2020)
+```
+
+# 3. Principais variáveis:
+
+Verificando os tipos de informações disponíveis:
+
+```{r}
+names(GEMS)
+```
+
+Os dados utilizados serão: "CountryName" ou seja o pais de origem dos dados analíticos, "FoodCategory" O tipo de alimento, ou seja, a matriz analítica como "Vegetais" ou "Ração Animal", "FoodOriginName", que descreve a origem como Domestica ou importada, "LOQ" o limite de quantificação,  "ResultValue", o valor obtido na análise quando quantificado, "AnalyticalQAName", que descreve as condições da análise, como feita em laboratório acreditado ou uso de controle de qualidade interno somente e "FoodName" que é a descrição exata do alimento como "Batata" ou "Arroz", 
+
+Antes, dever ser feita a avaliação das unidades do teor de Chumbo:
+
+
+```{r}
+summary(GEMS$UnitName)
+```
+
+
+
+Quando quantificado, o resultado foi reportado em duas unidades diferentes, mg/kg e ug/kg.
+
+Todas as unidades serão alteradas para mg/kg e os valores ajustados para a mesma unidade, sendo que 1ug/kg é equivalente a 0,001mg/kg:
+
+
+```{r message=TRUE, warning=TRUE, collapse=TRUE}
+for(i in 1:nrow(GEMS)){
+  if(GEMS[i,12]=="ug/kg"){
+     GEMS[i,14] <- GEMS[i,14]/1000
+     GEMS[i,10] <- GEMS[i,10]/1000
+     GEMS[i,12] <- "mg/kg"
+  } else {
+  NULL
+  }
+}
+```
+
+
+Confirmando a alteração:
+
+<center>
+```{r echo=FALSE}
+summary(GEMS$UnitName)
+```
+</center>
+O Limite de quantificação também foi alterado(Coluna 14 )
+
+
+# 4. Análise exploratória e busca das maiores contaminações:
+
+## 4.1 Distribuição  da origem dos dados
+
+Vamos visualizar de uma maneira prática quais paises contribuiram mais para o banco de dados da OMS usando a variável CountryName e quantas vezes um determinado pais aparece:
+
+```{r fig.align='center', out.width='130%'}
+
+ggplot(GEMS, aes(x=reorder(CountryName,CountryName,function(x)+length(x)), fill=CountryName, ))+geom_bar(show.legend= FALSE)+ coord_flip()+xlab("Country Name")+ylab("Number of samples")
+```
+Figura 1. Número de amostras por contribuinte do banco de dados no período de 1995 a 2020.
+
+```{r eval=FALSE, fig.align='center', message=FALSE, warning=FALSE, include=FALSE, out.width='130%'}
+library(treemap)
+GEMS %>%  group_by(CountryName) %>%  summarise(Count=length(CountryName), n=n()) -> treemap1
+treemap(treemap1,
+            index="CountryName",
+            vSize="Count",
+            type="index")
+```
+
+
+
+"WHO European Region", "China", "Canada", "United States of America", "Brazil" e "Thailand" são os principais contribuintes. Sendo WHO/Europa com 54% das contribuições e Canada em segundo com 13%.
+
+De agora em diante será usada uma amostra contendo somente os 6 países com mais contribuições(GEMS2)
+
+```{r include=FALSE}
+GEMS2=subset(GEMS,GEMS$CountryName=="WHO European Region"| GEMS$CountryName=="Canada"|GEMS$CountryName=="China" |GEMS$CountryName=="United States of America" | GEMS$CountryName=="Brazil"| GEMS$CountryName=="Thailand")
+```
+
+
+## 4.2 Qualidade Analítica dos ensaios
+
+Avaliando as informações disponíveis sobre qual ferramentas utilizada para qualidade dos ensaios, será usada a variável "AnalyticalQAName":
+
+
+```{r, collapse=TRUE,fig.align='center'}
+ggplot(GEMS)+geom_bar(aes(reorder(AnalyticalQAName,AnalyticalQAName,function(x)+length(x))
+                        ,fill=AnalyticalQAName), show.legend= FALSE, stat = "count")+
+  coord_flip()+
+  xlab("AnalyticalQAName")+xlab("Quality control Tool")+ylab("Number of samples")
+```
+Figura 2. Tipo de controle de qualidade do ensaio usado em relação ao número de amostras no banco de dados.
+
+Vemos que o equivalente a aproximadamente 48% (175.133) dos ensaios foram realizados em laboratórios acreditados e 16% (51139) tinha algum controle interno de qualidade ou ensaio de proficiência. 
+
+
+Investigamos agora, se a origem dos dados analíticos (uso ou não de uma laboratório acreditado) interfere com a média/espalhamento dentro dos dados de cada país. Primeiro, calculamos a média entre todas as amostras mas levando em consideração todos os resultados quantificados, primeiro um resumo dos dados totais:
+
+média total:
+
+```{r EVAL=TRUE, message=FALSE, warning=FALSE, collapse=TRUE}
+GEMS2 %>% group_by(CountryName) %>%  summarise(mean=mean(ResultValue,na.rm=TRUE), n=n())
+```
+Plotando:
+
+```{r EVAL=TRUE, message=FALSE, warning=FALSE, collapse=TRUE,fig.align='center'}
+GEMS2 %>% 
+  group_by(CountryName) %>%  
+  summarise(mean=mean(ResultValue,na.rm=TRUE), n=n())%>%
+  arrange(desc(n),na.rm=TRUE)%>% 
+  ggplot(aes(mean,CountryName ,fill=CountryName))+
+  geom_col(show.legend = FALSE)+
+  geom_text(aes(label = format(round(mean, 3), nsmall = 2)), vjust = 0.5,hjust=0)+xlim(c(0,0.25))+ylab("Country Name")+xlab("Mean Value of Pb (mg/Kg)")
+```
+
+Figura 3. Valor médio de Chumbo (mg/Kg) em amostras conforme o pais de origem.
+
+Média usando somente amostras quantificadas (adotamos aqui valores acima de 0.001mg/Kg):
+
+```{r EVAL=FALSE, message=FALSE, warning=FALSE, collapse=TRUE}
+GEMS2 %>% group_by(CountryName) %>%  summarise(mean=mean(ResultValue>=0.001,na.rm=TRUE), n=n())%>%arrange(desc(n),na.rm=TRUE)
+```
+Na forma de gráfico de barras agora:
+
+```{r EVAL=TRUE, message=FALSE, warning=FALSE, collapse=TRUE, fig.align='center'}
+GEMS2 %>% 
+  group_by(CountryName) %>%  
+  summarise(mean=mean(ResultValue>=0.001,na.rm=TRUE), n=n())%>%
+  arrange(desc(n),na.rm=TRUE)%>% 
+  ggplot(aes(mean,CountryName ,fill=CountryName))+
+  geom_col(show.legend = FALSE)+
+  geom_text(aes(label = format(round(mean, 3), nsmall = 2)), vjust = 0.5,hjust=0)+xlim(c(0,0.70))+ylab("Country Name")+xlab("Mean Value of Pb (mg/Kg)")
+```
+
+Figura 4. Valor médio de Chumbo (mg/Kg) em amostras quantificadas (acima de 0.001 mg/kg) conforme o pais de origem.
+
+Inicialmente os valores europeus aparentam serem mais altos, especificamente 4x maiores que os Brasileiros, 10x maiores que os Canadenses e 50x maiores que os dos EUA. Porém quando se leva em consideração somente os valores quantificados essa média diminui bastante. Uma teoria seria que os países como EUA e Canada teriam uma quantidade maior de amostras não detectadas e dessa forma a média seria reduzida.
+
+Para verificar se a fonte da diferença pode ser o uso de laboratórios não acreditados, iremos excluir estes dados no dataframe "GEMS3"
+
+```{r, collapse=TRUE}
+GEMS3=subset(GEMS2,GEMS2$AnalyticalQAName=="Officially accredited")
+```
+
+Repetindo agora o teste para ver se houve alteração nas médias:
+
+```{r message=FALSE, warning=FALSE, collapse=TRUE, EVAL=TRUE,fig.align='center'}
+GEMS3 %>% group_by(CountryName) %>%  summarise(mean=mean(ResultValue>=0.001,na.rm=TRUE), n=n())%>%arrange(desc(n),na.rm=TRUE)%>% ggplot(aes(mean,CountryName ,fill=CountryName))+geom_col(show.legend = FALSE)+geom_text(aes(label = format(round(mean, 3), nsmall = 2)), vjust = 0.5,hjust=0)+xlim(c(0,0.60))+ylab("Country Name")+xlab("Mean Value of Pb (mg/Kg)")
+```
+
+Figura 4. Valor médio de Chumbo (mg/Kg) em amostras quantificadas (acima de 0.001 mg/kg) e que usaram laboratórios acreditados, separadas por o pais de origem.
+
+Sim, a maioria dos valores médios reduziram e em especial a China que mostrou uma sobre-quantificação de Chumbo nos laboratórios não acreditados. Enquanto os laboratórios Europeus reportavam valores muito mais baixos.
+
+Quando avaliados dados somente de amostras quantificadas e de laboratórios acreditados, Europa e Canadá tem medias bem parecidas. 
+
+
+## 4.3 Distribuição conforme matriz (FoodCategory)
+
+Analisaremos agora os teores de cada matriz (Variável "FoodCategory" no GEMS). 
+Abaixo estão todos os resultados quantificados(considerando os 6 principais países contribuintes) em Chumbo por mg/kg (eixo x) para cada tipo de alimento(eixo y):
+
+
+```{r message=FALSE, warning=FALSE, collapse=TRUE,fig.align='center'}
+ggplot(GEMS2, aes(x=FoodCategory,y=ResultValue))+
+    geom_boxplot(show.legend = FALSE)+geom_hline(yintercept=0.1, linetype="solid", color = "red")+
+    scale_y_log10()+
+    scale_x_discrete(breaks=unique(GEMS$FoodCategory),labels = function(x) str_wrap(str_replace_all(x, "gjgj" , " "), width = 80))+
+    coord_flip()+theme(axis.text.x = element_text(angle = 90,size =10))+xlab("Food Category")+ylab("Pb (mg/Kg)")
+```
+
+
+
+Figura 5: Boxplot dos teores de Chumbo em mg/Kg em alimentos de acordo com a matriz. As caixas representam 50% dos dados, as barras horizontais os outros 50%. Pontos alem das barras representam outliers.
+
+A linha vermelha representa o limite de 0,1mg mg/Kg de Pb adotado como padrão em diversas legislações [2]. Apenas 4 matrizes(alimentos) tem sua mediana no limite ou acima dele: Ervas e Temperos, Bebidas estimulantes,ração animal e produtos para uso especial. OBS: Escala do eixo Y está em log10 para facilitar a visualização dos dados.
+
+
+Nota-se durante a evolução dos anos uma alteração nas médias provavelmente causada por sazonalidade.
+
+
+Vamos visualizar agora a distribuição na forma de Boxplot de cada alimento (dado categórico "FoodCategory")separado nos seis principais paises contribuintes:
+
+
+```{r message=FALSE, warning=FALSE, collapse=TRUE,fig.align='center'}
+ggplot(GEMS2, aes(ResultValue,FoodCategory,  color=CountryName))+
+      geom_boxplot(show.legend = FALSE)+scale_x_log10()+theme(axis.text.y = element_blank())+geom_vline(xintercept=0.1, linetype="solid", color = "red")+facet_wrap(~CountryName)+ylab("Food Category")+xlab("Pb (mg/Kg)")
+```
+Figura 7: Boxplot dos teores de Chumbo em mg/Kg em alimentos de acordo com a matriz (eixo Y). 
+
+A linha vermelha representa o limite de 0.1mg/kg, rotineiramente adotado como limite para Chumbo em alimentos internacionalmente [4].
+
+Nota-se uma quantidade muito maior de outliers na União Européia do que no segundo maior contribuinte (Canadá). Estes outliers se entendem ate concentrações bastante altas (até mesmo 100mg/Kg!) causando uma alavanca e "puxando" as medias totais para cima.
+
+
+# 5. Um estudo mais profundo dos teores de Chumbo na região da União Européia
+
+Para buscar por alguma possível alteração na qualidade dos ensaios conforme o tempo, vamos converter todas as datas para ano.
+
+```{r,collapse=TRUE}
+GEMS2$SamplingPeriodEnd <- as.POSIXct(GEMS2$SamplingPeriodEnd, format = "%m/%d/%Y %H:%M:%S")
+GEMS2$SamplingPeriodEnd <- format(GEMS2$SamplingPeriodEnd, format="%Y")
+```
+
+Visto que a região WHO/Europa apresenta grande quantidade de dados e muitos outliers/valores acima do permitido, ela foi escolhida para avaliação das matrizes e sua distribuição ao longo dos anos de forma mais detalhada.
+
+Examinaremos agora as amostras quantificadas (acima de 0,001mg/kg) na "WHO European Region" na forma de um heatplot:
+
+
+```{r message=FALSE, warning=FALSE,fig.align='center'}
+ subset(GEMS2, GEMS2$CountryName=="WHO European Region" & GEMS2$ResultValue) %>% 
+  ggplot(aes(SamplingPeriodEndText,y=reorder(FoodCategory, ResultValue,function(x)+mean(x)),  fill = ResultValue))+   
+  geom_tile(color = "white") +
+  scale_fill_gradient(limits=c(0.001, 1),low = "blue", high ="red", trans="log10")+ 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 90),)+ylab("FoodCategory")+
+  scale_y_discrete(labels = function(x) str_wrap(str_replace_all(x, "gjgj" , " "), width = 60))+
+  xlab("Year")+ylab("Food Category")
+```
+
+Figura 8. Heatplot do período de 15 anos de análises de teor de Chumbo em alimentos na OMS/Europa. Vermelho  representa o teor de 1mg/Kg, azul 0,001mg/kg. Nota-se que ao longo dos anos amostras de Ervas e temperos, bebidas estimulantes e ração animal, continuamente apresentam resultados mais altos do que outras matrizes. conforme já visto no boxplot da figura 7.
+
+A parte superior do Heatplot contem os alimentos com valores médios mais altos ao longo dos anos e os inferiores, com os menores.
+
+Podemos agora definir qual a frequência do 1%, 2% e 10% mais altos(em concentração de Pb) na massa total de dados:
+
+```{r,collapse=TRUE}
+quantile(subset(GEMS2$ResultValue,GEMS2$CountryName=="WHO European Region"),probs=(0.95),na.rm=TRUE)
+mean(subset(GEMS2$ResultValue,GEMS2$CountryName=="WHO European Region"),na.rm=TRUE)
+
+```
+
+
+   
+90% das amostras quantificadas estão abaixo de 0.2mg/Kg.
+
+
+```{r, collapse=TRUE}
+quantile(subset(GEMS2$ResultValue,GEMS2$CountryName=="WHO European Region"),probs=(0.98),na.rm=TRUE)
+```
+98% das amostras quantificadas estão abaixo de 0.58mg/Kg.
+
+
+```{r,collapse=TRUE }
+quantile(subset(GEMS2$ResultValue,GEMS2$CountryName=="WHO European Region"),probs=(0.99),na.rm=TRUE)
+```
+
+
+99% das amostras quantificadas estão abaixo de 1.21mg/Kg.
+
+Observando estes limites no histograma de frequência:
+
+```{r message=FALSE, warning=FALSE,fig.align='center'}
+subset(GEMS3, GEMS3$CountryName=="WHO European Region" & GEMS3$ResultValue) %>%
+  ggplot(aes(ResultValue, fill=FoodCategory))+
+  geom_histogram( show.legend= FALSE)+
+  geom_vline(xintercept=0.1, linetype="dashed", color = "red")+
+  geom_vline(xintercept=1.21, linetype="dashed", color = "blue")+
+  scale_x_log10()+xlab("Pb (mg/kg)")+ylab("Number of samples")
+```
+
+Figura 9: Histograma de frequência dos dados referentes a união europeia, eixo x na escala logarítmica. linha vermelha representa o valor de 0.1mg/kg. Linha azul representa limite máximo permitido na legislação e linha azul, a faixa que abrange 99% das amostras quantificadas(1.21mg/Kg).
+
+```{r, collapse=TRUE}
+shapiro.test(sample(subset(GEMS3$ResultValue, GEMS3$CountryName=="WHO European Region"),5000))
+t.test(subset(GEMS3$ResultValue, GEMS3$CountryName=="WHO European Region"))
+```
+Apesar do figura 9 mostrar a distribuição dos dados com a transformação logarítmica um teste de normalidade e um teste t para uma amostra mostra que o conjunto é normal e que a totalidade das amostras Europeias apresenta média 0.16mg/kg±0.08 mg/kg, 95% confiança e p-valor= 2.11e-05. 
+
+
+
+## 5.1 Relação dinâmica entre Qualidade do ensaio e origem da amostra
+
+Sabemos agora que a grande maioria das amostras (60%) fica abaixo do limite de quantificação e por simplicidade é reportada como 0,000. Uma quantidade mínima e quantificada e fica abaixo do limite da legislação. O restante (40%) é quantificada e 99% das vezes fica abaixo de 1,22mg/Kg.
+
+Buscaremos agora visualizar como essas informações se relacionam entre si usando o gráfico de Sankey. Este gráfico é similar ao de barras empilhadas porém, com linhas que mostram as relações entre as variáveis.
+
+```{r message=FALSE, warning=FALSE,fig.align='center',collapse=TRUE}
+Sankey <-read_csv("/mnt/DADOS/Data Science/GEMFoods/Sankey2")
+Sankey$a = as.factor(Sankey$a)
+Sankey$b = as.factor(Sankey$b)
+Sankey$c = as.factor(Sankey$c)
+```
+
+Vamos relacionar a Origem das amostras (Domestica ou importada), a ferramenta de controle de qualidade e o teor de chumbo quantificado:
+
+```{r message=FALSE, warning=FALSE,fig.align='center'}
+library(alluvial)
+library(ggalluvial)
+
+ggplot(as.data.frame(Sankey), aes(y = d, axis1 = a, axis2 = b, axis3 = c)) +
+  geom_alluvium(aes(fill = c, colors=a), width = 1/6) +
+  geom_stratum(width = 1/5, fill = "white", color = "grey10") +
+  scale_x_continuous(breaks = 1:3, labels = c("Origem", "Controle \n de qualidade", "Resultado\n em mg/Kg")) +
+  geom_label(stat = "stratum", aes(label = after_stat(stratum))) +  theme(legend.position = "none")+ylab("Number of samples")
+
+```
+
+Figura 10: Gráfico de Sankey mostrando a relação entre a origem, a técnica de controle de qualidade usada e o resultado em mg/Kg.
+Pode-se notar que tanto por origem, Controle de qualidade ou resultado não há nenhuma tendência.
+Nota-se também que entre as amostras domésticas e importadas apresentam a mesma razão entre quantificadas acima de 0,1 mg/Kg e abaixo do limite de quantificação. 
+
+
+## 5.2 Em busca das matrizes com teores mais altos
+
+Vamos investigar somente as amostras com teores mais altos, Ervas e temperos, ração animal, bebidas estimulantes e Produtos para uso nutricional especial. Primeiro, como elas se relacionam com o tempo e a quantidade de amostras testadas e quantificadas:
+
+
+```{r}
+GEMS4=subset(GEMS2, GEMS2$CountryName=="WHO European Region" & GEMS2$FoodCategory=="ANIMAL FEED" | GEMS2$FoodCategory=="Stimulant beverages, dried and diluted excluding cocoa products" | GEMS2$FoodCategory=="Herbs, spices and condiments"  | GEMS2$FoodCategory=="Products for special nutritional use")
+```
+
+
+```{r}
+GEMS5=subset(GEMS2, GEMS2$CountryName=="WHO European Region")
+```
+
+
+```{r,fig.align='center'}
+ggplot(GEMS4,aes(x=SamplingPeriodEnd,y=length(RowNum), fill=ResultValue<=0.001))+
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90),)+
+  facet_wrap(~str_wrap(FoodCategory,width = 40))+ggtitle("Number of samples analysed according to matrix")
+```
+Figura 11. Gráficos de barras agrupando as 4 principais classes com maiores valores médios de Chumbo no período de 25 anos. A número de amostras quantificadas é demonstrada pela diferença de cores (Vermelho quantificado, Azul abaixo do LOQ).
+
+```{r,fig.align='center'}
+ggplot(GEMS4,aes(x=SamplingPeriodEnd,y=(RowNum), fill=ResultValue<=0.001))+
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90),)+
+  facet_wrap(~str_wrap(FoodCategory,width = 40))+ylab("ResultValue")+ggtitle("Ratio of quantified samples according to matrix")
+
+```
+Figura 12. Gráficos de barras agrupando as 4 principais classes com maiores valores médios de Chumbo no período de 25 anos. Os valores foram normatizados sendo que cada coluna corresponde a 100% dos valores e a razão entre amostras quantificadas e não quantificadas é demonstrada pela diferença de cores (Vermelho quantificado, Azul abaixo do LOQ).
+
+Nota-se que quando as amostras de Ervas e temperos apresentam amostras quantificadas rotineiramente por um período superior a 10 anos e mesmo com variação no número de amostras a quantidade quantificada é muito próxima. Alguns anos em que ocorre a fuga do padrão, e possível ver que o número total de amostras é menor (por exemplo amostras de bebidas estimulantes no início dos anos 2000)
+
+
+Sabemos até agora que esses quatro grupos de alimentos são frequentemente quantificados. Porém,não está claro se algumas amostras possuem teores muito altos e "arrastam" a média para concentrações mais altas. 
+
+Para isso vamos avaliar um boxplot com 99% dos dados (para evitar outliers) e ver onde os quartis se localizam:
+
+
+```{r message=FALSE, warning=FALSE, collapse=TRUE,fig.align='center'}
+ggplot(GEMS5, aes(x=FoodCategory,y=ResultValue))+
+    geom_boxplot(show.legend = FALSE,alpha=1/10)+geom_hline(yintercept=0.1, linetype="solid", color = "red")+
+        scale_x_discrete(breaks=unique(GEMS$FoodCategory),labels = function(x) str_wrap(str_replace_all(x, "gjgj" , " "), width = 80))+ylim(c(0,1.22))+
+    coord_flip()+theme(axis.text.x = element_text(angle = 90,size =10))+xlab("Food Category")+ylab("Pb (mg/Kg)")+annotate("rect",ymin = 0,ymax=0.88, xmin = "Starchy roots and tubers",xmax="Sugar and confectionary (including cocoa products)", alpha=0.3, color="blue", fill="blue")
+
+```
+Figura 13. Boxplot com eixo linear contemplando 99% das amostras na faixa de 0.001 a 1.22mg/kg de Pb.
+
+Podemos ver que o pior caso é o das bebidas estimulantes que englobam cafés e chás. A mediana se localiza bem no limite de 0.1mg/kg e o terceiro quartil(50% a 75%) se alonga até mais de 0.25mg/kg.
+
+Através da distribuição cumulativa, vemos que o problema não são outliers mas uma grande quantidade de amostras em diversas concentrações que é quantificada nessa classe:
+
+
+
+```{r message=FALSE, warning=FALSE}
+ggplot(GEMS5, aes(x=ResultValue, color=FoodCategory, label=FoodCategory),show.legend = FALSE)+
+    stat_ecdf(geom = "line", aes(ResultValue),show.legend = FALSE) +xlab("Pb (mg/Kg)")+geom_vline(xintercept=0.1, linetype="solid", color = "red")+geom_vline(xintercept=1.22, linetype="solid", color = "blue")+xlim(c(0,1.22))+annotate("text", x = 0.52, y = 0.6, 
+label = c("Stimulant beverages") , color="purple",size=5 )+annotate("segment", x = 0.30, xend = 0.25, y = 0.6, yend = 0.65, colour = "purple", size=1, alpha=0.9, arrow=arrow())+ylab("Cumulative distribution")
+
+```
+
+Figura 14. Gráfico com distribuição cumulativa do teor de Chumbo nas amostras de alimentos na União Europeia. Linha vermelha representa a concentração de 0.1mg/kg de Pb e linha azul 1.22mg/kg que é o teor que engloba 99% das amostras.
+
+Investigamos se dentro da classe de bebidas estimulantes, qual seria a pior matriz.
+
+```{r message=FALSE, warning=FALSE}
+ggplot(subset(GEMS5,GEMS5$FoodCategory=="Stimulant beverages, dried and diluted excluding cocoa products") , aes(x=ResultValue, color=FoodName, label=FoodName))+
+    stat_ecdf(geom = "line", aes(ResultValue)) +xlab("Pb (mg/Kg)")+geom_vline(xintercept=0.1, linetype="solid", color = "red")+geom_vline(xintercept=1.22, linetype="solid", color = "blue")+xlim(c(0,1.22))+ylab("Cumulative distribution")
+
+```
+
+
+Figura 15. Gráfico com distribuição cumulativa do teor de Chumbo nas amostras de alimentos na União Europeia dentro da categoria "Bebidas estimulantes". Linha vermelha representa a concentração de 0.1mg/kg de Pb e linha azul 1.22mg/kg que é o teor que engloba 99% das amostras. 
+
+
+
+# 6. Conclusão
+
+A maior parte dos alimentos com altos valores de Chumbo possuem ingestão bastante limitada:
+"ANIMAL FEED" (obviamente), "Stimulant beverages" (uso ocasional),"Herbs, spices and condiments" (apenas como ingredientes e em pequenas quantidades). Apenas "Products for special nutritional use" (Como alimentação parenteral) são críticos pois podem resultar em uma ingestão mais alta por períodos mais longos 
+
+O pior caso são as infusões de chá, onde mais de 50% das amostras apresentaram teores acima de 0.25mg/kg de Chumbo ou 2,5x mais que o limite.
+
+Não há indicativos que que amostras importadas (União Europeia) sejam quantificadas mais frequentemente do que as importadas, indicando contaminação na fonte.
+
+
+
+
+Referencias:
+
+https://www.fda.gov/food/metals-and-your-food/lead-food-foodwares-and-dietary-supplements
